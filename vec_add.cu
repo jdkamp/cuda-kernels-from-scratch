@@ -1,4 +1,3 @@
-
 #include <cassert>
 #include <cstdio>
 #include <vector>
@@ -147,7 +146,7 @@ float vec_add_float4(float* h_a, float* h_b, float* h_out, int n) {
 }
 
 int main() {
-    int n = (1 << 24) + 3;    // 2^24
+    int n = (1 << 24) + 3;    // 2^24 + 3
 
     std::vector<float> h_a(n);
     std::vector<float> h_b(n);
