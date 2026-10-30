@@ -130,6 +130,7 @@ float tiled_matrix_mul(float* h_m, float* h_n, float* h_p, int width) {
 
 int main() {
     int width = 1000;
+    size_t bytes_moved = 3 * sizeof(float) * width * width;   // read m and n once, write p (lower bound)
 
     std::vector<float> h_m(width * width);
     std::vector<float> h_n(width * width);
@@ -155,13 +156,13 @@ int main() {
 
     // Basic matrix multiplication. -1 marks elements that no thread has written.
     float ms = matrix_mul(h_m.data(), h_n.data(), h_p.data(), width);
-    printf("basic:       %.3f ms\n", ms);
+    printf("basic:       %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_p, expected) == 0);
 
     // Tiled matrix multiplication
     std::vector<float> h_p_tiled(width * width, -1.0f);
     ms = tiled_matrix_mul(h_m.data(), h_n.data(), h_p_tiled.data(), width);
-    printf("tiled:       %.3f ms\n", ms);
+    printf("tiled:       %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_p_tiled, expected) == 0);
 
     return 0;

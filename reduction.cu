@@ -283,6 +283,7 @@ float warp_shuffle_reduction(float* h_input, float* h_output, int n) {
 int main() {
     int n = 2048 * 1024;
     int n_single_block = 2 * kBlockDim;   // stages 1-3 run in one block and need exactly this size
+    size_t bytes_moved = n * sizeof(float);   // read input, the single output value is negligible
 
     std::vector<float> h_input(n);
     for (int i = 0; i < n; i++) {
@@ -317,17 +318,17 @@ int main() {
 
     h_output = -1.0f;
     float ms = segmented_reduction(h_input.data(), &h_output, n);
-    printf("4. Segmented        (n = %d): %.1f   (%.3f ms)\n", n, h_output, ms);
+    printf("4. Segmented        (n = %d): %.1f   (%.3f ms, %.1f GB/s)\n", n, h_output, ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(h_output == expected);
 
     h_output = -1.0f;
     ms = coarsened_reduction(h_input.data(), &h_output, n);
-    printf("5. Coarsened        (n = %d): %.1f   (%.3f ms)\n", n, h_output, ms);
+    printf("5. Coarsened        (n = %d): %.1f   (%.3f ms, %.1f GB/s)\n", n, h_output, ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(h_output == expected);
 
     h_output = -1.0f;
     ms = warp_shuffle_reduction(h_input.data(), &h_output, n);
-    printf("6. Warp shuffle     (n = %d): %.1f   (%.3f ms)\n", n, h_output, ms);
+    printf("6. Warp shuffle     (n = %d): %.1f   (%.3f ms, %.1f GB/s)\n", n, h_output, ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(h_output == expected);
 
     return 0;

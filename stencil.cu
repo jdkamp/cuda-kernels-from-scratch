@@ -328,6 +328,7 @@ float stencil_register_tiling(float* h_input, float* h_output, int n) {
 
 int main() {
     int n = 512;
+    size_t bytes_moved = 2 * sizeof(float) * n * n * n;   // read input, write output
     std::vector<float> h_input(n*n*n);
     for (int i = 0; i < n*n*n; i++) {
         h_input[i] = i % 7;
@@ -337,22 +338,22 @@ int main() {
 
     std::vector<float> h_output(n*n*n, -1.0f);
     float ms = stencil_basic(h_input.data(), h_output.data(), n);
-    printf("basic:      %.3f ms\n", ms);
+    printf("basic:      %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_output, expected) == 0);
 
     std::vector<float> h_output_shared_mem(n*n*n, -1.0f);
     ms = stencil_shared_mem(h_input.data(), h_output_shared_mem.data(), n);
-    printf("shared mem: %.3f ms\n", ms);
+    printf("shared mem: %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_output_shared_mem, expected) == 0);
 
     std::vector<float> h_output_coarsened(n*n*n, -1.0f);
     ms = stencil_coarsened(h_input.data(), h_output_coarsened.data(), n);
-    printf("coarsened:  %.3f ms\n", ms);
+    printf("coarsened:  %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_output_coarsened, expected) == 0);
 
     std::vector<float> h_output_register_tiling(n*n*n, -1.0f);
     ms = stencil_register_tiling(h_input.data(), h_output_register_tiling.data(), n);
-    printf("register:   %.3f ms\n", ms);
+    printf("register:   %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_output_register_tiling, expected) == 0);
 
     return 0;

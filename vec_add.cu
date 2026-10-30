@@ -147,6 +147,8 @@ float vec_add_float4(float* h_a, float* h_b, float* h_out, int n) {
 
 int main() {
     int n = (1 << 24) + 3;    // 2^24 + 3
+    size_t bytes_moved = 3 * n * sizeof(float);   // read a and b, write out
+    printf("Peak bandwidth: %.1f GB/s\n", peak_bandwidth_gb_per_s());
 
     std::vector<float> h_a(n);
     std::vector<float> h_b(n);
@@ -165,19 +167,19 @@ int main() {
     // Basic vector addition. -1 marks elements that no thread has written.
     std::vector<float> h_out(n, -1.0f);
     float ms = vec_add(h_a.data(), h_b.data(), h_out.data(), n);
-    printf("basic:       %.3f ms\n", ms);
+    printf("basic:       %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_out, expected) == 0);
 
     // Grid-stride vector addition
     std::vector<float> h_out_grid_stride(n, -1.0f);
     ms = vec_add_grid_stride(h_a.data(), h_b.data(), h_out_grid_stride.data(), n);
-    printf("grid-stride: %.3f ms\n", ms);
+    printf("grid-stride: %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_out_grid_stride, expected) == 0);
 
     // Float4 vector addition
     std::vector<float> h_out_float4(n, -1.0f);
     ms = vec_add_float4(h_a.data(), h_b.data(), h_out_float4.data(), n);
-    printf("float4:      %.3f ms\n", ms);
+    printf("float4:      %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_out_float4, expected) == 0);
 
     return 0;

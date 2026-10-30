@@ -297,6 +297,7 @@ float histogram_aggregation(const char* h_data, int n, unsigned int* h_histo) {
 
 int main() {
     int n = (1 << 24) + 3;
+    size_t bytes_moved = n * sizeof(char);   // read data, the 7 bins are negligible
 
     std::vector<char> h_data(n);
     srand(0);   // reproducibility
@@ -313,27 +314,27 @@ int main() {
 
     std::vector<unsigned int> h_histo_basic(kNumBins, 0);
     float ms = histogram_basic(h_data.data(), n, h_histo_basic.data());
-    printf("basic:       %.3f ms\n", ms);
+    printf("basic:       %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_histo_basic, expected) == 0);
 
     std::vector<unsigned int> h_histo_private(kNumBins, 0);
     ms = histogram_private(h_data.data(), n, h_histo_private.data());
-    printf("private:     %.3f ms\n", ms);
+    printf("private:     %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_histo_private, expected) == 0);
 
     std::vector<unsigned int> h_histo_contiguous(kNumBins, 0);
     ms = histogram_contiguous(h_data.data(), n, h_histo_contiguous.data());
-    printf("contiguous:  %.3f ms\n", ms);
+    printf("contiguous:  %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_histo_contiguous, expected) == 0);
 
     std::vector<unsigned int> h_histo_interleaved(kNumBins, 0);
     ms = histogram_interleaved(h_data.data(), n, h_histo_interleaved.data());
-    printf("interleaved: %.3f ms\n", ms);
+    printf("interleaved: %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_histo_interleaved, expected) == 0);
 
     std::vector<unsigned int> h_histo_aggregation(kNumBins, 0);
     ms = histogram_aggregation(h_data.data(), n, h_histo_aggregation.data());
-    printf("aggregation: %.3f ms\n", ms);
+    printf("aggregation: %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_histo_aggregation, expected) == 0);
 
     return 0;
