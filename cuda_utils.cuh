@@ -1,6 +1,8 @@
-#pragma once
+#ifndef CUDA_UTILS_CUH
+#define CUDA_UTILS_CUH
 
 #include <vector>
+#include <cassert>
 
 // Times a kernel with CUDA events.
 struct GpuTimer {
@@ -20,10 +22,14 @@ struct GpuTimer {
 };
 
 // Returns the number of elements where result and expected differ.
-int count_mismatches(const std::vector<float>& result, const std::vector<float>& expected) {
+template <typename T>
+int count_mismatches(const std::vector<T>& result, const std::vector<T>& expected) {
+    assert(result.size() == expected.size());
     int mismatch = 0;
     for (size_t i = 0; i < result.size(); i++){
         if (result[i] != expected[i]) mismatch++;
     }
     return mismatch;
 }
+
+#endif  // CUDA_UTILS_CUH

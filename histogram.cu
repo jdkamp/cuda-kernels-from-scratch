@@ -314,27 +314,27 @@ int main() {
     std::vector<unsigned int> h_histo_basic(kNumBins, 0);
     float ms = histogram_basic(h_data.data(), n, h_histo_basic.data());
     printf("basic:       %.3f ms\n", ms);
-    assert(h_histo_basic == expected);
+    assert(count_mismatches(h_histo_basic, expected) == 0);
 
     std::vector<unsigned int> h_histo_private(kNumBins, 0);
     ms = histogram_private(h_data.data(), n, h_histo_private.data());
     printf("private:     %.3f ms\n", ms);
-    assert(h_histo_private == expected);
+    assert(count_mismatches(h_histo_private, expected) == 0);
 
     std::vector<unsigned int> h_histo_contiguous(kNumBins, 0);
     ms = histogram_contiguous(h_data.data(), n, h_histo_contiguous.data());
     printf("contiguous:  %.3f ms\n", ms);
-    assert(h_histo_contiguous == expected);
+    assert(count_mismatches(h_histo_contiguous, expected) == 0);
 
     std::vector<unsigned int> h_histo_interleaved(kNumBins, 0);
     ms = histogram_interleaved(h_data.data(), n, h_histo_interleaved.data());
     printf("interleaved: %.3f ms\n", ms);
-    assert(h_histo_interleaved == expected);
+    assert(count_mismatches(h_histo_interleaved, expected) == 0);
 
     std::vector<unsigned int> h_histo_aggregation(kNumBins, 0);
     ms = histogram_aggregation(h_data.data(), n, h_histo_aggregation.data());
     printf("aggregation: %.3f ms\n", ms);
-    assert(h_histo_aggregation == expected);
+    assert(count_mismatches(h_histo_aggregation, expected) == 0);
 
     return 0;
 }
