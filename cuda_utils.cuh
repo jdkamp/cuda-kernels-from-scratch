@@ -37,6 +37,11 @@ inline double bandwidth_gb_per_s(size_t bytes, float ms) {
     return static_cast<double>(bytes) / (ms * 1e-3) / 1e9;
 }
 
+// Compute throughput in GFLOP/s: floating-point operations divided by the time.
+inline double gflop_per_s(double flops, float ms) {
+    return flops / (ms * 1e-3) / 1e9;
+}
+
 // Theoretical peak memory bandwidth of the current GPU in GB/s.
 inline double peak_bandwidth_gb_per_s() {
     int device = 0;

@@ -3,7 +3,7 @@
 #include <vector>
 #include "cuda_utils.cuh"
 
-constexpr int kFilterRadius = 1;                                // filter is (2*r+1) x (2*r+1)
+constexpr int kFilterRadius = 3;                                // filter is (2*kFilterRadius+1) x (2*kFilterRadius+1)
 constexpr int kBlockDim = 16;                                   // threads per block in x and y (stages 1 and 2)
 constexpr int kInTileDim = 32;                                  // input tile including halo = threads per block
 constexpr int kOutTileDim = (kInTileDim - 2 * kFilterRadius);   // output pixels per block
@@ -206,11 +206,12 @@ float convolution_2d_tiled_const_mem(float* h_input, float* h_filter, float* h_o
 int main() {
     // Not square and no multiple of kBlockDim or kOutTileDim, so every kernel needs
     // several blocks in both directions and the tiled kernel loads halos from neighbouring tiles.
-    int width = 70;
-    int height = 45;
+    int width = 4000;
+    int height = 3000;
     int r = kFilterRadius;
     int filter_dim = 2*r+1;
     size_t bytes_moved = 2 * sizeof(float) * width * height;   // read input, write output, filter is negligible
+    double flops = 2.0 * filter_dim * filter_dim * width * height;   // one multiply and one add per filter value
 
     std::vector<float> h_input(width*height);
     for (int i = 0; i < width*height; i++) {
@@ -224,23 +225,23 @@ int main() {
     // Reference result on the CPU.
     std::vector<float> expected(width*height);
     convolution_2d_cpu(h_input.data(), h_filter.data(), expected.data(), r, width, height);
-
+    
     // Basic, filter in global memory. -1 marks pixels that no thread has written.
     std::vector<float> h_output_basic(width*height, -1.0f);
     float ms = convolution_2d_basic(h_input.data(), h_filter.data(), h_output_basic.data(), r, width, height);
-    printf("basic:           %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
+    printf("basic:           %.3f ms  %.1f GB/s  %.1f GFLOP/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms), gflop_per_s(flops, ms));
     assert(count_mismatches(h_output_basic, expected) == 0);
 
     // Filter in constant memory
     std::vector<float> h_output_const(width*height, -1.0f);
     ms = convolution_2d_const_mem(h_input.data(), h_filter.data(), h_output_const.data(), width, height);
-    printf("constant memory: %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
+    printf("constant memory: %.3f ms  %.1f GB/s  %.1f GFLOP/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms), gflop_per_s(flops, ms));
     assert(count_mismatches(h_output_const, expected) == 0);
 
     // Filter in constant memory and tiled
     std::vector<float> h_output_tiled(width*height, -1.0f);
     ms = convolution_2d_tiled_const_mem(h_input.data(), h_filter.data(), h_output_tiled.data(), width, height);
-    printf("tiled:           %.3f ms  %.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
+    printf("tiled:           %.3f ms  %.1f GB/s  %.1f GFLOP/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms), gflop_per_s(flops, ms));
     assert(count_mismatches(h_output_tiled, expected) == 0);
 
     return 0;
