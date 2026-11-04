@@ -57,12 +57,9 @@ float kogge_stone_scan(const int* h_input, int* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    kogge_stone_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        kogge_stone_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
@@ -112,12 +109,9 @@ float kogge_stone_double_buffer_scan(const int* h_input, int* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    kogge_stone_double_buffer_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        kogge_stone_double_buffer_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
@@ -197,12 +191,9 @@ float warp_shuffle_scan(const int* h_input, int* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    warp_shuffle_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        warp_shuffle_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
@@ -265,12 +256,9 @@ float coarsened_scan(const int* h_input, int* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    coarsened_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        coarsened_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
@@ -347,12 +335,9 @@ float register_tiled_scan(const int* h_input, int* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    register_tiled_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        register_tiled_scan_kernel<<<1, kBlockDim>>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 

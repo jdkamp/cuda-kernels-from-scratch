@@ -37,12 +37,9 @@ float matrix_mul(float* h_m, float* h_n, float* h_p, int width) {
     cudaMemcpy(d_m, h_m, size, cudaMemcpyHostToDevice);
     cudaMemcpy(d_n, h_n, size, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    matrix_mul_kernel<<<num_blocks, threads_per_block>>>(d_m, d_n, d_p, width);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        matrix_mul_kernel<<<num_blocks, threads_per_block>>>(d_m, d_n, d_p, width);
+    });
 
 
     cudaMemcpy(h_p, d_p, size, cudaMemcpyDeviceToHost);
@@ -112,12 +109,9 @@ float tiled_matrix_mul(float* h_m, float* h_n, float* h_p, int width) {
     cudaMemcpy(d_m, h_m, size, cudaMemcpyHostToDevice);
     cudaMemcpy(d_n, h_n, size, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    tiled_matrix_mul_kernel<<<num_blocks, threads_per_block>>>(d_m, d_n, d_p, width);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        tiled_matrix_mul_kernel<<<num_blocks, threads_per_block>>>(d_m, d_n, d_p, width);
+    });
 
     cudaMemcpy(h_p, d_p, size, cudaMemcpyDeviceToHost);
 

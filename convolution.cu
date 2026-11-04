@@ -68,12 +68,9 @@ float convolution_2d_basic(float* h_input, float* h_filter, float* h_output, int
     dim3 num_blocks((width  + threads_per_block.x - 1) / threads_per_block.x,
                     (height + threads_per_block.y - 1) / threads_per_block.y);
 
-    GpuTimer timer;
-    timer.begin();
-
-    convolution_2d_basic_kernel<<<num_blocks, threads_per_block>>>(d_input, d_filter, d_output, r, width, height);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        convolution_2d_basic_kernel<<<num_blocks, threads_per_block>>>(d_input, d_filter, d_output, r, width, height);
+    });
 
     cudaMemcpy(h_output, d_output, image_size, cudaMemcpyDeviceToHost);
 
@@ -121,12 +118,9 @@ float convolution_2d_const_mem(float* h_input, float* h_filter, float* h_output,
     dim3 num_blocks((width  + threads_per_block.x - 1) / threads_per_block.x,
                     (height + threads_per_block.y - 1) / threads_per_block.y);
 
-    GpuTimer timer;
-    timer.begin();
-
-    convolution_2d_const_mem_kernel<<<num_blocks, threads_per_block>>>(d_input, d_output, width, height);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        convolution_2d_const_mem_kernel<<<num_blocks, threads_per_block>>>(d_input, d_output, width, height);
+    });
 
     cudaMemcpy(h_output, d_output, image_size, cudaMemcpyDeviceToHost);
 
@@ -187,12 +181,9 @@ float convolution_2d_tiled_const_mem(float* h_input, float* h_filter, float* h_o
     dim3 num_blocks((width  + kOutTileDim - 1) / kOutTileDim,
                     (height + kOutTileDim - 1) / kOutTileDim);
 
-    GpuTimer timer;
-    timer.begin();
-
-    convolution_2d_tiled_const_mem_kernel<<<num_blocks, threads_per_block>>>(d_input, d_output, width, height);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        convolution_2d_tiled_const_mem_kernel<<<num_blocks, threads_per_block>>>(d_input, d_output, width, height);
+    });
 
     cudaMemcpy(h_output, d_output, image_size, cudaMemcpyDeviceToHost);
 

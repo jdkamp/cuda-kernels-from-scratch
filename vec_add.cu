@@ -26,12 +26,9 @@ float vec_add(float* h_a, float* h_b, float* h_out, int n) {
     cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    vec_add_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, d_b, d_out, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        vec_add_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, d_b, d_out, n);
+    });
 
     cudaMemcpy(h_out, d_out, bytes, cudaMemcpyDeviceToHost);
 
@@ -67,12 +64,9 @@ float vec_add_grid_stride(float* h_a, float* h_b, float* h_out, int n) {
     cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    vec_add_grid_stride_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, d_b, d_out, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        vec_add_grid_stride_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, d_b, d_out, n);
+    });
 
     cudaMemcpy(h_out, d_out, bytes, cudaMemcpyDeviceToHost);
 
@@ -129,12 +123,9 @@ float vec_add_float4(float* h_a, float* h_b, float* h_out, int n) {
     cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    vec_add_float4_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, d_b, d_out, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        vec_add_float4_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, d_b, d_out, n);
+    });
 
     cudaMemcpy(h_out, d_out, bytes, cudaMemcpyDeviceToHost);
 

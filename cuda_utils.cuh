@@ -1,8 +1,9 @@
 #ifndef CUDA_UTILS_CUH
 #define CUDA_UTILS_CUH
 
-#include <vector>
+#include <algorithm>
 #include <cassert>
+#include <vector>
 
 // Times a kernel with CUDA events.
 struct GpuTimer {
@@ -20,6 +21,27 @@ struct GpuTimer {
         return ms;
     }
 };
+
+// Runs launch() once untimed as a warm-up (module loading, clock ramp-up, caches),
+// then timed_runs times with CUDA events, and returns the median time in ms.
+// launch() must give the same result every time it runs, so kernels that
+// accumulate into their output (atomicAdd) need the output reset inside launch().
+template <typename Launch>
+float time_kernel(Launch launch, int timed_runs = 20) {
+    launch();
+    cudaDeviceSynchronize();
+
+    GpuTimer timer;
+    std::vector<float> times(timed_runs);
+    for (int run = 0; run < timed_runs; run++) {
+        timer.begin();
+        launch();
+        times[run] = timer.end();
+    }
+
+    std::sort(times.begin(), times.end());
+    return times[timed_runs / 2];
+}
 
 // Returns the number of elements where result and expected differ.
 template <typename T>

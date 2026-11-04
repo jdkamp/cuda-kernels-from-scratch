@@ -45,12 +45,10 @@ float histogram_basic(const char* h_data, int n, unsigned int* h_histo) {
     cudaMemcpy(d_data, h_data, bytes_data, cudaMemcpyHostToDevice);
     cudaMemcpy(d_histo, h_histo, bytes_histo, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    histogram_basic_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_histo, 0, bytes_histo);   // the kernel accumulates with atomicAdd
+        histogram_basic_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
+    });
 
     cudaMemcpy(h_histo, d_histo, bytes_histo, cudaMemcpyDeviceToHost);
 
@@ -99,12 +97,10 @@ float histogram_private(const char* h_data, int n, unsigned int* h_histo) {
     cudaMemcpy(d_data, h_data, bytes_data, cudaMemcpyHostToDevice);
     cudaMemcpy(d_histo, h_histo, bytes_histo, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    histogram_private_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_histo, 0, bytes_histo);   // the kernel accumulates with atomicAdd
+        histogram_private_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
+    });
 
     cudaMemcpy(h_histo, d_histo, bytes_histo, cudaMemcpyDeviceToHost);
 
@@ -155,12 +151,10 @@ float histogram_contiguous(const char* h_data, int n, unsigned int* h_histo) {
     cudaMemcpy(d_data, h_data, bytes_data, cudaMemcpyHostToDevice);
     cudaMemcpy(d_histo, h_histo, bytes_histo, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    histogram_contiguous_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_histo, 0, bytes_histo);   // the kernel accumulates with atomicAdd
+        histogram_contiguous_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
+    });
 
     cudaMemcpy(h_histo, d_histo, bytes_histo, cudaMemcpyDeviceToHost);
 
@@ -210,12 +204,10 @@ float histogram_interleaved(const char* h_data, int n, unsigned int* h_histo) {
     cudaMemcpy(d_data, h_data, bytes_data, cudaMemcpyHostToDevice);
     cudaMemcpy(d_histo, h_histo, bytes_histo, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    histogram_interleaved_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_histo, 0, bytes_histo);   // the kernel accumulates with atomicAdd
+        histogram_interleaved_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
+    });
 
     cudaMemcpy(h_histo, d_histo, bytes_histo, cudaMemcpyDeviceToHost);
 
@@ -280,12 +272,10 @@ float histogram_aggregation(const char* h_data, int n, unsigned int* h_histo) {
     cudaMemcpy(d_data, h_data, bytes_data, cudaMemcpyHostToDevice);
     cudaMemcpy(d_histo, h_histo, bytes_histo, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    histogram_aggregation_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_histo, 0, bytes_histo);   // the kernel accumulates with atomicAdd
+        histogram_aggregation_kernel<<<num_blocks, kThreadsPerBlock>>>(d_data, n, d_histo);
+    });
 
     cudaMemcpy(h_histo, d_histo, bytes_histo, cudaMemcpyDeviceToHost);
 

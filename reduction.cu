@@ -146,12 +146,10 @@ float segmented_reduction(float* h_input, float* h_output, int n) {
 
     cudaMemcpy(d_input, h_input, n * size, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    segmented_reduction_kernel<<<n / (2 * kBlockDim), kBlockDim>>>(d_input, d_output);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_output, 0, size);   // the kernel accumulates with atomicAdd
+        segmented_reduction_kernel<<<n / (2 * kBlockDim), kBlockDim>>>(d_input, d_output);
+    });
 
     cudaMemcpy(h_output, d_output, size, cudaMemcpyDeviceToHost);
 
@@ -199,12 +197,10 @@ float coarsened_reduction(float* h_input, float* h_output, int n) {
 
     cudaMemcpy(d_input, h_input, n * size, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    coarsened_reduction_kernel<<<n / (kCoarseFactor * 2 * kBlockDim), kBlockDim>>>(d_input, d_output);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_output, 0, size);   // the kernel accumulates with atomicAdd
+        coarsened_reduction_kernel<<<n / (kCoarseFactor * 2 * kBlockDim), kBlockDim>>>(d_input, d_output);
+    });
 
     cudaMemcpy(h_output, d_output, size, cudaMemcpyDeviceToHost);
 
@@ -262,12 +258,10 @@ float warp_shuffle_reduction(float* h_input, float* h_output, int n) {
 
     cudaMemcpy(d_input, h_input, n * size, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    warp_shuffle_reduction_kernel<<<n / (kCoarseFactor * 2 * kBlockDim), kBlockDim>>>(d_input, d_output);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        cudaMemset(d_output, 0, size);   // the kernel accumulates with atomicAdd
+        warp_shuffle_reduction_kernel<<<n / (kCoarseFactor * 2 * kBlockDim), kBlockDim>>>(d_input, d_output);
+    });
 
     cudaMemcpy(h_output, d_output, size, cudaMemcpyDeviceToHost);
 

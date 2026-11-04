@@ -72,12 +72,9 @@ float stencil_basic(float* h_input, float* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    stencil_basic_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        stencil_basic_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
@@ -136,12 +133,9 @@ float stencil_shared_mem(float* h_input, float* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    stencil_shared_mem_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        stencil_shared_mem_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
@@ -225,12 +219,9 @@ float stencil_coarsened(float* h_input, float* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    stencil_coarsened_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        stencil_coarsened_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
@@ -311,12 +302,9 @@ float stencil_register_tiling(float* h_input, float* h_output, int n) {
     cudaMemcpy(d_input, h_input, bytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_output, h_output, bytes, cudaMemcpyHostToDevice);
 
-    GpuTimer timer;
-    timer.begin();
-
-    stencil_register_tiling_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
-
-    float ms = timer.end();
+    float ms = time_kernel([&] {
+        stencil_register_tiling_kernel<<<num_blocks, threads_per_block >>>(d_input, d_output, n);
+    });
 
     cudaMemcpy(h_output, d_output, bytes, cudaMemcpyDeviceToHost);
 
