@@ -3,10 +3,9 @@
 #include <cstdlib>
 #include <vector>
 #include "cuda_utils.cuh"
+#include "scan_utils.cuh"
 
 constexpr int kBlockDim = 512;
-constexpr int kWarpSize = 32;
-constexpr int kNumWarps = kBlockDim / kWarpSize;
 constexpr int kCoarseFactor = 8;                        // elements per thread
 constexpr int kSectionSize = kBlockDim * kCoarseFactor; // elements per block
 
@@ -119,50 +118,6 @@ float kogge_stone_double_buffer_scan(const int* h_input, int* h_output, int n) {
     cudaFree(d_output);
 
     return ms;
-}
-
-// Inclusive scan of val across the 32 lanes of a warp.
-__device__ int warp_scan(int val) {
-    int lane = threadIdx.x % kWarpSize;
-    for (int offset = 1; offset < kWarpSize; offset *= 2) {
-        int left = __shfl_up_sync(0xffffffff, val, offset);
-        if (lane >= offset) {
-            val += left;
-        }
-    }
-    return val;
-}
-
-// Inclusive scan of val across the whole block: scan within each warp,
-// scan the warp totals, add the total of all previous warps.
-// Requires blockDim = kBlockDim, kNumWarps <= kWarpSize
-__device__ int block_scan(int val) {
-    __shared__ int warp_sums[kNumWarps];
-    int lane = threadIdx.x % kWarpSize;
-    int warp = threadIdx.x / kWarpSize;
-
-    val = warp_scan(val);
-    if (lane == kWarpSize - 1) {
-        warp_sums[warp] = val;
-    }
-
-    __syncthreads();
-
-    if (warp == 0) {
-        int warp_sum = (threadIdx.x<kNumWarps) ? warp_sums[threadIdx.x] : 0;
-        warp_sum = warp_scan(warp_sum);
-        if (threadIdx.x < kNumWarps) {
-            warp_sums[threadIdx.x] = warp_sum;
-        }
-    }
-
-    __syncthreads();
-
-    if (warp > 0) {
-        val += warp_sums[warp-1];
-    }
-
-    return val;
 }
 
 // Stage 3: block scan with warp shuffles (scan-scan-add). Each warp scans its

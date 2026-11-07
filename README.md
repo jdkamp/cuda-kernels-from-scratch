@@ -13,6 +13,7 @@ While learning GPU programming I implemented the core parallel patterns in CUDA 
 | [`stencil.cu`](stencil.cu) | 3D 7-point stencil | Basic, shared memory tiles, thread coarsening in z, register tiling |
 | [`histogram.cu`](histogram.cu) | Histogram | Global atomics, privatization in shared memory, contiguous and interleaved coarsening, aggregation |
 | [`scan.cu`](scan.cu) | Inclusive scan (single block) | Kogge-Stone, double buffering, warp shuffle (scan-scan-add), thread coarsening, register tiling |
+| [`filter.cu`](filter.cu) | Filter (stream compaction) | Global atomics, warp-aggregated atomics, block-aggregated atomics with a block scan, thread coarsening, privatization in shared memory |
 
 ## Results
 
@@ -107,6 +108,20 @@ All stages scan within a single block of 512 threads. Stages 1-3 handle one elem
 | register tiling                | 4000 | 0.007 ms | 4.39 GB/s |
 
 With a single block on one of 40 SMs and at most 16 KB of data, these times are dominated by the kernel launch and do not show the differences between the algorithms.
+
+### Filter
+
+n = 2^24 + 3 random integers in 0-9, keeping the even ones (50 %). All stages are unstable: the order of the output depends on which warp or block gets its atomic first, so the test compares sorted results. Measured in a separate session from the tables above.
+
+| Kernel | Time | Bandwidth |
+|---|---|---|
+| global atomics                       | 0.866 ms | 116 GB/s |
+| warp-aggregated atomics              | 0.993 ms | 101 GB/s |
+| block-aggregated atomics (block scan) | 1.360 ms | 74 GB/s |
+| + thread coarsening (8 per thread)   | 0.776 ms | 130 GB/s |
+| + privatization in shared memory     | 0.442 ms | 228 GB/s |
+
+Warp aggregation by hand brings nothing, because nvcc already aggregates the basic `atomicAdd(count, 1)` per warp. Block aggregation saves more atomics but is slower, because the block scan and barriers cost more than they save. Thread coarsening spreads these costs over 8 elements per thread. The big step is privatization: packing the kept elements in shared memory first makes the global stores coalesced, which alone gives 1.75x and reaches 228 GB/s, close to vector addition.
 
 ## Running
 
