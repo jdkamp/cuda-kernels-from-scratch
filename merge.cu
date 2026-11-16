@@ -1,0 +1,381 @@
+#include <algorithm>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#include "cuda_utils.cuh"
+
+constexpr int kThreadsPerBlock = 256;
+constexpr int kElementsPerThread = 8;   // output elements per thread
+constexpr int kElementsPerBlock = kThreadsPerBlock * kElementsPerThread;
+constexpr int kTileSize = 1024;         // output elements per tile
+constexpr int kTilesPerBlock = 8;
+constexpr int kTiledElementsPerBlock = kTileSize * kTilesPerBlock;      // output elements per block
+constexpr int kTileElementsPerThread = kTileSize / kThreadsPerBlock;    // 4 output elements per thread per tile
+
+// Merge sorted a[0..m) and sorted b[0..n) into c[0..m+n).
+// On equal values the element from a comes first.
+__host__ __device__ void merge_sequential(const int* a, int m, const int* b, int n, int* c) {
+    int i = 0;  // index for a
+    int j = 0;  // index for b
+    int k = 0;  // index for c
+    
+    while ((i < m) && (j < n)) {
+        if (a[i] <= b[j]) {     // <= keeps the merge stable
+            c[k++] = a[i++];
+        } else {
+            c[k++] = b[j++];
+        }
+    }
+    while (i < m) {     // copy the rest of a
+        c[k++] = a[i++];
+    }
+    while (j < n) {     // copy the rest of b
+        c[k++] = b[j++];
+    }
+}
+
+// Returns i such that c[0..k) is the merge of a[0..i) and b[0..k-i).
+// Binary search that keeps the same tie-breaking as merge_sequential.
+__host__ __device__ int co_rank(int k, const int* a, int m, const int* b, int n) {
+    int i = k < m ? k : m;              // start, as many from as possible: (min k, m)
+    int j = k - i;
+    int i_low = 0 > (k-n) ? 0 : k - n;  // smallest possible i: max(0, k - n)
+    int j_low = 0 > (k-m) ? 0 : k - m;  // smallest possible j: max(0, k - m)
+
+    while (true) {
+        if (i > 0 && j < n && a[i-1] > b[j]) {
+            int delta = (i - i_low + 1) / 2;
+            j_low = j;
+            i -= delta;
+            j += delta;
+        } else if (j > 0 && i < m && b[j-1] >= a[i]){
+            int delta = (j - j_low + 1) / 2;
+            i_low = i;
+            i += delta;
+            j -= delta;
+        } else {
+            return i;
+        }
+    }
+
+}
+
+// Stage 1: each thread merges kElementsPerThread output elements. It finds its
+// parts of a and b with co_rank and merges them sequentially. a and b are read
+// directly from global memory.
+__global__ void merge_basic_kernel(const int* a, int m, const int* b, int n, int* c) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;    // global thread index
+
+    // This thread's part of c: [k_curr, k_next), not beyond m + n
+    int k_curr = min(tid * kElementsPerThread, m + n);
+    int k_next = min((tid+1) * kElementsPerThread, m + n);
+
+    // Matching parts of a and b
+    int i_curr = co_rank(k_curr, a, m, b, n);   // where my part starts in a
+    int i_next = co_rank(k_next, a, m, b, n);   // where my part ends in a
+    int j_curr = k_curr - i_curr;               // where it starts in b
+    int j_next = k_next - i_next;               // where it ends in b
+
+    // Merge them sequentially into c, starting at k_curr
+    merge_sequential(&a[i_curr], i_next-i_curr, &b[j_curr], j_next-j_curr, &c[k_curr]);
+}
+
+float merge_basic(const int* h_a, int m, const int* h_b, int n, int* h_c) {
+    size_t bytes_a = m * sizeof(int);
+    size_t bytes_b = n * sizeof(int);
+    size_t bytes_c = bytes_a + bytes_b;
+    int num_blocks = (m + n + kElementsPerBlock - 1) / kElementsPerBlock;
+    int *d_a, *d_b, *d_c;
+
+    cudaMalloc(&d_a, bytes_a);
+    cudaMalloc(&d_b, bytes_b);
+    cudaMalloc(&d_c, bytes_c);
+
+    cudaMemcpy(d_a, h_a, bytes_a, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, h_b, bytes_b, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_c, h_c, bytes_c, cudaMemcpyHostToDevice);
+
+    float ms = time_kernel([&] {
+        merge_basic_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, m, d_b, n, d_c);
+    });
+
+    cudaMemcpy(h_c, d_c, bytes_c, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_c);
+
+    return ms;
+}
+
+// Stage 2: tiled merge. Each block finds its part of a and b with co_rank, then
+// loops over tiles: the whole block loads the next kTileSize elements of a and b
+// into shared memory (coalesced), and each thread merges its share of the tile
+// from shared memory. Elements loaded but not used in a round are loaded again
+// in the next round. Requires blockDim.x = kThreadsPerBlock.
+__global__ void merge_tiled_kernel(const int* a, int m, const int* b, int n, int* c) {
+    __shared__ int a_s[kTileSize];
+    __shared__ int b_s[kTileSize];
+    __shared__ int block_a_start, block_a_end;
+
+    // This block's part of c, not beyond m + n
+    int c_start = min(blockIdx.x * kTiledElementsPerBlock, m + n);
+    int c_end = min((blockIdx.x + 1) * kTiledElementsPerBlock, m + n);
+
+
+    // One thread computes the matching start and end in a
+    if (threadIdx.x == 0) {
+        block_a_start = co_rank(c_start, a, m, b, n);
+        block_a_end = co_rank(c_end, a, m, b, n);
+    }
+
+    __syncthreads();
+
+    int a_start = block_a_start;
+    int b_start = c_start - a_start;
+    int a_length = block_a_end - block_a_start;
+    int c_length = c_end - c_start;
+    int b_length = c_length - a_length;
+
+    int a_consumed = 0;
+    int b_consumed = 0;
+    int c_completed = 0;
+
+    while (c_completed < c_length) {
+        int a_tile_length = min(kTileSize, a_length - a_consumed);
+        int b_tile_length = min(kTileSize, b_length - b_consumed);
+
+        // Coalesced load of the next tiles of a and b.
+        for (int t = threadIdx.x; t < a_tile_length; t += blockDim.x) {
+            a_s[t] = a[a_start + a_consumed + t];
+        }
+        for (int t = threadIdx.x; t < b_tile_length; t += blockDim.x) {
+            b_s[t] = b[b_start + b_consumed + t];
+        }
+
+        __syncthreads();    // tiles are complete before anyone merges from them
+
+        // Output elements of this tile, at most kTileSize.
+        int c_tile_length = min(kTileSize, c_length - c_completed);
+
+        // This thread's part of the tile: [k_curr, k_next)
+        int k_curr = min(threadIdx.x * kTileElementsPerThread, c_tile_length);
+        int k_next = min((threadIdx.x + 1) * kTileElementsPerThread, c_tile_length);
+
+        // Matching parts of the tiles
+        int i_curr = co_rank(k_curr, a_s, a_tile_length, b_s, b_tile_length);
+        int i_next = co_rank(k_next, a_s, a_tile_length, b_s, b_tile_length);
+        int j_curr = k_curr - i_curr;
+        int j_next = k_next - i_next;
+
+        // Merge this thread's part of the tiles into c.
+        merge_sequential(a_s + i_curr, i_next - i_curr,
+                         b_s + j_curr, j_next - j_curr,
+                         c + c_start + c_completed + k_curr);
+
+        // How many elements of each tile the whole block used in this round.
+        int a_used = co_rank(c_tile_length, a_s, a_tile_length, b_s, b_tile_length);
+        a_consumed += a_used;
+        c_completed += c_tile_length;
+        b_consumed = c_completed - a_consumed;
+
+        __syncthreads();    // everyone is done with a_s and b_s before the next load overwrites them
+    }
+}
+
+float merge_tiled(const int* h_a, int m, const int* h_b, int n, int* h_c) {
+    size_t bytes_a = m * sizeof(int);
+    size_t bytes_b = n * sizeof(int);
+    size_t bytes_c = bytes_a + bytes_b;
+    int num_blocks = (m + n + kTiledElementsPerBlock - 1) / kTiledElementsPerBlock;   // each block handles kTiledElementsPerBlock
+    int *d_a, *d_b, *d_c;
+
+    cudaMalloc(&d_a, bytes_a);
+    cudaMalloc(&d_b, bytes_b);
+    cudaMalloc(&d_c, bytes_c);
+
+    cudaMemcpy(d_a, h_a, bytes_a, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, h_b, bytes_b, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_c, h_c, bytes_c, cudaMemcpyHostToDevice);
+
+    float ms = time_kernel([&] {
+        merge_tiled_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, m, d_b, n, d_c);
+    });
+
+    cudaMemcpy(h_c, d_c, bytes_c, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_c);
+
+    return ms;
+}
+
+// Stage 3: stage 2 with coalesced stores. Each thread merges its share of the
+// tile into shared-memory buffer, and the whole block then copies the buffer
+// to c.
+// Requires: blockDim.x = kThreadsPerBlock
+__global__ void merge_tiled_coalesced_kernel(const int* a, int m, const int* b, int n, int* c) {
+    __shared__ int a_s[kTileSize];
+    __shared__ int b_s[kTileSize];
+    __shared__ int c_s[kTileSize];
+    __shared__ int block_a_start, block_a_end;
+
+    // This block's part of c, not beyond m + n
+    int c_start = min(blockIdx.x * kTiledElementsPerBlock, m + n);
+    int c_end = min((blockIdx.x + 1) * kTiledElementsPerBlock, m + n);
+
+
+    // One thread computes the matching start and end in a
+    if (threadIdx.x == 0) {
+        block_a_start = co_rank(c_start, a, m, b, n);
+        block_a_end = co_rank(c_end, a, m, b, n);
+    }
+
+    __syncthreads();
+
+    int a_start = block_a_start;
+    int b_start = c_start - a_start;
+    int a_length = block_a_end - block_a_start;
+    int c_length = c_end - c_start;
+    int b_length = c_length - a_length;
+
+    int a_consumed = 0;
+    int b_consumed = 0;
+    int c_completed = 0;
+
+    while (c_completed < c_length) {
+        int a_tile_length = min(kTileSize, a_length - a_consumed);
+        int b_tile_length = min(kTileSize, b_length - b_consumed);
+
+        // Coalesced load of the next tiles of a and b.
+        for (int t = threadIdx.x; t < a_tile_length; t += blockDim.x) {
+            a_s[t] = a[a_start + a_consumed + t];
+        }
+        for (int t = threadIdx.x; t < b_tile_length; t += blockDim.x) {
+            b_s[t] = b[b_start + b_consumed + t];
+        }
+
+        __syncthreads();    // tiles are complete before anyone merges from them
+
+        // Output elements of this tile, at most kTileSize.
+        int c_tile_length = min(kTileSize, c_length - c_completed);
+
+        // This thread's part of the tile: [k_curr, k_next)
+        int k_curr = min(threadIdx.x * kTileElementsPerThread, c_tile_length);
+        int k_next = min((threadIdx.x + 1) * kTileElementsPerThread, c_tile_length);
+
+        // Matching parts of the tiles
+        int i_curr = co_rank(k_curr, a_s, a_tile_length, b_s, b_tile_length);
+        int i_next = co_rank(k_next, a_s, a_tile_length, b_s, b_tile_length);
+        int j_curr = k_curr - i_curr;
+        int j_next = k_next - i_next;
+
+        // Merge this thread's part of the tiles into c_s.
+        merge_sequential(a_s + i_curr, i_next - i_curr,
+                         b_s + j_curr, j_next - j_curr,
+                         c_s + k_curr);
+
+        __syncthreads();    // the copy reads output written by other threads
+
+        for (int t = threadIdx.x; t < c_tile_length; t += blockDim.x) {
+            c[c_start+c_completed+t] = c_s[t];
+        }
+
+        // How many elements of each tile the whole block used in this round.
+        int a_used = co_rank(c_tile_length, a_s, a_tile_length, b_s, b_tile_length);
+        a_consumed += a_used;
+        c_completed += c_tile_length;
+        b_consumed = c_completed - a_consumed;
+
+        __syncthreads();    // everyone is done with a_s and b_s before the next load overwrites them
+    }
+}
+
+float merge_tiled_coalesced(const int* h_a, int m, const int* h_b, int n, int* h_c) {
+    size_t bytes_a = m * sizeof(int);
+    size_t bytes_b = n * sizeof(int);
+    size_t bytes_c = bytes_a + bytes_b;
+    int num_blocks = (m + n + kTiledElementsPerBlock - 1) / kTiledElementsPerBlock;   // each block handles kTiledElementsPerBlock
+    int *d_a, *d_b, *d_c;
+
+    cudaMalloc(&d_a, bytes_a);
+    cudaMalloc(&d_b, bytes_b);
+    cudaMalloc(&d_c, bytes_c);
+
+    cudaMemcpy(d_a, h_a, bytes_a, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_b, h_b, bytes_b, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_c, h_c, bytes_c, cudaMemcpyHostToDevice);
+
+    float ms = time_kernel([&] {
+        merge_tiled_coalesced_kernel<<<num_blocks, kThreadsPerBlock>>>(d_a, m, d_b, n, d_c);
+    });
+
+    cudaMemcpy(h_c, d_c, bytes_c, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_c);
+
+    return ms;
+}
+
+int main() {
+    // Not multiples of the block or tile size, and m != n.
+    int m = (1 << 23) + 1;
+    int n = (1 << 23) + 5;
+    size_t bytes_moved = 2 * (m + n) * sizeof(int); // read a and b, write c
+    std::vector<int> h_a(m);
+    std::vector<int> h_b(n);
+
+    // Sorted inputs with many equal values, so the tie-breaking is tested too.
+    srand(0);   // reproducibility
+    for (int i = 0; i < m; i++) {
+        h_a[i] =  rand() % 10;
+    }
+    for (int i = 0; i < n; i++) {
+        h_b[i] =  rand() % 10;
+    }
+    std::sort(h_a.begin(), h_a.end());
+    std::sort(h_b.begin(), h_b.end());
+
+    // Reference on the CPU, checked against std::merge.
+    std::vector<int> h_expected(m+n);
+    merge_sequential(h_a.data(), m, h_b.data(), n, h_expected.data());
+
+    std::vector<int> h_reference(m + n);
+    std::merge(h_a.begin(), h_a.end(), h_b.begin(), h_b.end(), h_reference.begin());
+    assert(count_mismatches(h_expected, h_reference) == 0);
+    printf("merged %d + %d elements\n", m, n);
+
+    // co_rank on the CPU: both conditions must hold for every output position.
+    for (int k = 0; k <= m + n; k++) {
+        int i = co_rank(k, h_a.data(), m, h_b.data(), n);
+        int j = k - i;
+        assert(i >= 0 && i <= m && j >= 0 && j <= n);
+        assert(i == 0 || j == n || h_a[i - 1] <= h_b[j]);    // i not too large
+        assert(j == 0 || i == m || h_b[j - 1] < h_a[i]);     // j not too large
+    }
+    printf("co_rank ok for all %d positions\n", m + n + 1);
+
+    // Basic: each thread merges from global memory. -1 marks elements no thread has written.
+    std::vector<int> h_c_basic(m + n, -1);
+    float ms = merge_basic(h_a.data(), m, h_b.data(), n, h_c_basic.data());
+    printf("basic:     %.3f ms  %5.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
+    assert(count_mismatches(h_c_basic, h_expected) == 0);
+
+    // Tiled: blocks load tiles of a and b into shared memory
+    std::vector<int> h_c_tiled(m + n, -1);
+    ms = merge_tiled(h_a.data(), m, h_b.data(), n, h_c_tiled.data());
+    printf("tiled:     %.3f ms  %5.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
+    assert(count_mismatches(h_c_tiled, h_expected) == 0);
+
+    // Tiled with coalesced stores: output goes through shared memory first
+    std::vector<int> h_c_coalesced(m + n, -1);
+    ms = merge_tiled_coalesced(h_a.data(), m, h_b.data(), n, h_c_coalesced.data());
+    printf("coalesced: %.3f ms  %5.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
+    assert(count_mismatches(h_c_coalesced, h_expected) == 0);
+
+    return 0;
+}
