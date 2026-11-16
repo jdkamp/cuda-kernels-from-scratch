@@ -106,8 +106,9 @@ float merge_basic(const int* h_a, int m, const int* h_b, int n, int* h_c) {
 }
 
 int main() {
-    int m = 1000;
-    int n = 1500;
+    int m = (1 << 23) + 1;
+    int n = (1 << 23) + 5;
+    size_t bytes_moved = 2 * (m + n) * sizeof(int); // read a and b, write c
     std::vector<int> h_a(m);
     std::vector<int> h_b(n);
 
@@ -141,5 +142,6 @@ int main() {
     std::vector<int> h_c_basic(m + n, -1);
     float ms = merge_basic(h_a.data(), m, h_b.data(), n, h_c_basic.data());
     printf("basic:  %.3f ms\n", ms);
+    printf("basic:  %.3f ms  %5.1f GB/s\n", ms, bandwidth_gb_per_s(bytes_moved, ms));
     assert(count_mismatches(h_c_basic, h_expected) == 0);
 }
