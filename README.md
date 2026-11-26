@@ -14,6 +14,8 @@ While learning GPU programming I implemented the core parallel patterns in CUDA 
 | [`histogram.cu`](histogram.cu) | Histogram | Global atomics, privatization in shared memory, contiguous and interleaved coarsening, aggregation |
 | [`scan.cu`](scan.cu) | Inclusive scan (single block) | Kogge-Stone, double buffering, warp shuffle (scan-scan-add), thread coarsening, register tiling |
 | [`filter.cu`](filter.cu) | Filter (stream compaction) | Global atomics, warp-aggregated atomics, block-aggregated atomics with a block scan, thread coarsening, privatization in shared memory |
+| [`merge.cu`](merge.cu) | Merge of two sorted arrays | Co-rank with binary search, basic, tiled in shared memory, tiled with coalesced stores |
+| [`sort.cu`](sort.cu) | Sorting | Odd-even transposition sort, merge sort, radix sort (single block and multi-block) |
 
 ## Results
 
@@ -122,6 +124,31 @@ n = 2^24 + 3 random integers in 0-9, keeping the even ones (50 %). All stages ar
 | + privatization in shared memory     | 0.442 ms | 228 GB/s |
 
 Warp aggregation by hand brings nothing, because nvcc already aggregates the basic `atomicAdd(count, 1)` per warp. Block aggregation saves more atomics but is slower, because the block scan and barriers cost more than they save. Thread coarsening spreads these costs over 8 elements per thread. The big step is privatization: packing the kept elements in shared memory first makes the global stores coalesced, which alone gives 1.75x and reaches 228 GB/s, close to vector addition.
+
+### Merge
+
+Two sorted arrays of 2^23 + 1 and 2^23 + 5 integers in 0-9, so many equal values test the tie-breaking. 134 MB moved. Every thread finds its part of the two inputs on its own with `co_rank`, a binary search over the output position. Measured in a separate session from the tables above.
+
+| Kernel | Time | Bandwidth |
+|---|---|---|
+| basic                     | 3.838 ms | 35 GB/s |
+| tiled (shared memory)     | 0.795 ms | 169 GB/s |
+| tiled + coalesced stores  | 0.738 ms | 182 GB/s |
+
+In the basic kernel every thread runs two binary searches in global memory and reads its parts of the inputs on its own, so neighbouring threads touch addresses far apart. The tiled kernel needs `co_rank` in global memory only twice per block. The whole block then loads tiles of both inputs into shared memory with coalesced loads, and the threads run `co_rank` and the merge on the tiles. That makes it 4.8x faster. Writing the output through shared memory as well makes the stores coalesced and the kernel slightly faster.
+
+### Sort
+
+The two simple stages only work on small inputs, so Mkeys/s (million keys per second) is added for comparison. Merge sort and multi-block radix sort sort the same 2^20 + 3 random keys.
+
+| Kernel | n | Time | Throughput |
+|---|---|---|---|
+| odd-even, one kernel launch per phase   | 999       | 11.745 ms | 0.09 Mkeys/s |
+| radix sort, single block                | 200       | 0.149 ms  | 1.3 Mkeys/s |
+| merge sort                              | 2^20 + 3  | 6.035 ms  | 174 Mkeys/s |
+| radix sort, multi-block                 | 2^20 + 3  | 2.713 ms  | 386 Mkeys/s |
+
+Odd-even sort needs a host round trip for every pair of phases, so its time is almost only kernel launches and synchronisation. Merge sort sorts tiles of 1024 keys in shared memory with the same odd-even algorithm, one barrier per phase, and then merges neighbouring runs with `co_rank` in a few passes. Radix sort splits the keys by one bit per pass: each block counts its zeros and ones, a scan over all counts gives every block the start of its part of each bucket, and the blocks write their keys there. On the same keys it is 2.2x faster than merge sort.
 
 ## Running
 
